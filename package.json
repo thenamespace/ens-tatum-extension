@@ -1,0 +1,29 @@
+{
+  "name": "ens-extension",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "scripts": {
+    "lint": "eslint src --ext .js,.jsx,.ts,.tsx && prettier --write src/",
+    "clean": "rm -rf dist build package",
+    "ts-node": "ts-node",
+    "build": "node_modules/.bin/tsc -p tsconfig.json",
+    "build-all": "yarn clean && yarn build"
+  },
+  "devDependencies": {
+    "@tatumio/evm-wallet-provider": "^1.0.11",
+    "@tatumio/tatum": "^4.2.8",
+    "@types/node": "^18.15.11",
+    "@typescript-eslint/eslint-plugin": "^5.20.0",
+    "@typescript-eslint/parser": "^5.20.0",
+    "eslint": "^8.14.0",
+    "jest": "^29.7.0",
+    "prettier": "^2.8.4",
+    "prettier-plugin-organize-imports": "^3.2.2",
+    "ts-node": "^10.7.0",
+    "tslib": "^2.5.0",
+    "typescript": "*",
+    "viem": "^2.7.11"
+  },
+  "dependencies": {}
+}
