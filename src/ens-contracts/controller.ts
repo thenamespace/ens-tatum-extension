@@ -1,25 +1,37 @@
-import { ITatumSdkContainer, Network } from '@tatumio/tatum';
-import { EnsExtension, EnsExtensionOptions } from 'src/extension';
-import { Address, encodeFunctionData, namehash } from 'viem';
+import { Network } from '@tatumio/tatum';
+import { Address, TransactionReceipt, encodeFunctionData, namehash } from 'viem';
 import controllerAbi from '../abi/eth-controller.json';
 import resolverAbi from '../abi/public-resolver.json';
+import { Contract } from './contract';
 
 interface IRentPriceResponse {
   base: bigint;
   premium: bigint;
 }
 
-export class EnsController extends EnsExtension {
-  private CONTROLLER_ADDRESS_MAINNET: Address = '0x253553366da8546fc250f225fe3d25d0c782303b';
-  private CONTROLLER_ADDRESS_SEPOLIA: Address = '0xFED6a969AaA60E4961FCD3EBF1A2e8913ac65B72';
+export class EnsController {
+  public static readonly CONTROLLER_ADDRESS_MAINNET: Address = '0x253553366da8546fc250f225fe3d25d0c782303b';
+  public static readonly CONTROLLER_ADDRESS_SEPOLIA: Address = '0xFED6a969AaA60E4961FCD3EBF1A2e8913ac65B72';
+  private static _address: Address;
+  private static _controller: EnsController;
 
-  constructor(tatumSdkContainer: ITatumSdkContainer, private readonly options: EnsExtensionOptions) {
-    super(tatumSdkContainer, options);
+  private constructor() {}
 
-    this.contract =
-      tatumSdkContainer.getConfig().network === Network.ETHEREUM
-        ? this.CONTROLLER_ADDRESS_MAINNET
-        : this.CONTROLLER_ADDRESS_SEPOLIA;
+  static get(network?: Network): EnsController {
+    if (EnsController._controller) return this._controller;
+
+    if (!network) throw new Error('Network must be provided.');
+
+    EnsController._address =
+      network === Network.ETHEREUM ? this.CONTROLLER_ADDRESS_MAINNET : this.CONTROLLER_ADDRESS_SEPOLIA;
+
+    EnsController._controller = new EnsController();
+    return EnsController._controller;
+  }
+
+  address(address: Address): EnsController {
+    EnsController._address = address;
+    return EnsController._controller;
   }
 
   async makeCommitment(
@@ -30,23 +42,26 @@ export class EnsController extends EnsExtension {
     resolver: string,
     setAsPrimary: boolean,
     fuses: number,
-  ) {
+  ): Promise<TransactionReceipt> {
+    label = label.toLocaleLowerCase();
     const regData = await this.getSetAddrData(`${label}.eth`, owner);
     const _encodedSecret = this.toBytes32HexString(secret);
-    const commitment = await this.read({
+    const commitment = await Contract.get().read({
+      address: EnsController._address,
       functionName: 'makeCommitment',
       args: [label, owner, durationInSeconds, _encodedSecret, resolver, [regData], setAsPrimary, fuses],
       abi: controllerAbi,
     });
 
-    return this.write({
+    return Contract.get().write({
+      address: EnsController._address,
       functionName: 'commit',
       args: [commitment],
       abi: controllerAbi,
     });
   }
 
-  public async register(
+  async register(
     label: string,
     owner: string,
     durationInSeconds: number,
@@ -54,12 +69,14 @@ export class EnsController extends EnsExtension {
     resolver: string,
     setAsPrimary: boolean,
     fuses: number,
-  ) {
+  ): Promise<TransactionReceipt> {
+    label = label.toLocaleLowerCase();
     const totalPrice = await this.estimatePrice(label, durationInSeconds);
     const encodedSecret = this.toBytes32HexString(secret);
     const regData = await this.getSetAddrData(`${label}.eth`, owner);
 
-    return await this.write({
+    return await Contract.get().write({
+      address: EnsController._address,
       functionName: 'register',
       args: [label, owner, durationInSeconds, encodedSecret, resolver, [regData], setAsPrimary, fuses],
       value: totalPrice,
@@ -67,13 +84,14 @@ export class EnsController extends EnsExtension {
     });
   }
 
-  public async estimatePrice(label: string, durationInSeconds: number) {
+  public async estimatePrice(label: string, durationInSeconds: number): Promise<bigint> {
     const estimate = await this.rentPrice(label, durationInSeconds);
     return estimate.base + estimate.premium;
   }
 
-  public async rentPrice(label: string, durationInSeconds: number) {
-    return await this.read<IRentPriceResponse>({
+  private async rentPrice(label: string, durationInSeconds: number): Promise<IRentPriceResponse> {
+    return await Contract.get().read<IRentPriceResponse>({
+      address: EnsController._address,
       functionName: 'rentPrice',
       args: [label, durationInSeconds],
       abi: controllerAbi,
@@ -103,18 +121,5 @@ export class EnsController extends EnsExtension {
     const bytes32Value = '0x' + Buffer.from(paddedBytes).toString('hex');
 
     return bytes32Value;
-  }
-
-  init(): Promise<void> {
-    if (this.sdkConfig.network === Network.ETHEREUM || this.sdkConfig.network === Network.ETHEREUM_SEPOLIA) {
-      console.log(`[EnsExtension] initialised`);
-      return Promise.resolve(undefined);
-    }
-    throw new Error(`EnsExtension only supports ${Network.ETHEREUM} network`);
-  }
-
-  destroy(): Promise<void> {
-    console.log(`[EnsExtension] disposed`);
-    return Promise.resolve(undefined);
   }
 }
