@@ -17,13 +17,15 @@ export class EnsController {
 
   private constructor() {}
 
-  static get(network?: Network): EnsController {
+  static get(contract?: Contract): EnsController {
     if (EnsController._controller) return this._controller;
 
-    if (!network) throw new Error('Network must be provided.');
+    if (!contract?.network) throw new Error('Network must be provided.');
 
     EnsController._address =
-      network === Network.ETHEREUM ? this.CONTROLLER_ADDRESS_MAINNET : this.CONTROLLER_ADDRESS_SEPOLIA;
+      contract.network === Network.ETHEREUM
+        ? this.CONTROLLER_ADDRESS_MAINNET
+        : this.CONTROLLER_ADDRESS_SEPOLIA;
 
     EnsController._controller = new EnsController();
     return EnsController._controller;

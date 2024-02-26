@@ -1,31 +1,45 @@
-import { ITatumSdkContainer, Network } from '@tatumio/tatum';
-import { EnsExtension, EnsExtensionOptions } from 'src/extension';
-import { Address, Hash, decodeFunctionResult, encodeFunctionData, namehash } from 'viem';
+import { Network } from '@tatumio/tatum';
+import { Address, Hash, TransactionReceipt, decodeFunctionResult, encodeFunctionData, namehash } from 'viem';
 import abi from '../abi/public-resolver.json';
+import { Contract } from './contract';
 
 export interface IENSTextRecord {
   key: string;
   value: string;
 }
 
-export class Resolver extends EnsExtension {
-  private RESOLVER_ADDRESS_MAINNET: Address = '0x231b0Ee14048e9dCcD1d247744d114a4EB5E8E63';
-  private RESOLVER_ADDRESS_SEPOLIA: Address = '0x8FADE66B79cC9f707aB26799354482EB93a5B7dD';
+export class Resolver {
+  public static RESOLVER_ADDRESS_MAINNET: Address = '0x231b0Ee14048e9dCcD1d247744d114a4EB5E8E63';
+  public static RESOLVER_ADDRESS_SEPOLIA: Address = '0x8FADE66B79cC9f707aB26799354482EB93a5B7dD';
+  private static _address: Address;
+  private static _resolver: Resolver;
 
-  constructor(tatumSdkContainer: ITatumSdkContainer, private readonly options: EnsExtensionOptions) {
-    super(tatumSdkContainer, options);
+  private constructor() {}
 
-    this.contract =
-      tatumSdkContainer.getConfig().network === Network.ETHEREUM
-        ? this.RESOLVER_ADDRESS_MAINNET
-        : this.RESOLVER_ADDRESS_SEPOLIA;
+  static get(contract?: Contract): Resolver {
+    if (Resolver._resolver) return this._resolver;
+
+    if (!contract?.network) throw new Error('Network must be provided.');
+
+    Resolver._address =
+      contract.network === Network.ETHEREUM ? this.RESOLVER_ADDRESS_MAINNET : this.RESOLVER_ADDRESS_SEPOLIA;
+
+    Resolver._resolver = new Resolver();
+    return Resolver._resolver;
   }
 
-  public async setTextRecords(
+  address(address: Address): Resolver {
+    Resolver._address = address;
+    return Resolver._resolver;
+  }
+
+  async setTextRecords(
     name: string,
     recordsToUpdate: IENSTextRecord[],
     recordsToRemove: string[],
-  ): Promise<Hash> {
+  ): Promise<TransactionReceipt> {
+    name = name.toLowerCase();
+
     const data: Hash[] = [];
     if (recordsToUpdate.length > 0) {
       recordsToUpdate.forEach((record) => {
@@ -49,14 +63,17 @@ export class Resolver extends EnsExtension {
       });
     }
 
-    return this.write({
+    return Contract.get().write({
+      address: Resolver._address,
       functionName: 'multicall',
       args: [data],
       abi,
     });
   }
 
-  public async getTextRecords(name: string, recordKeys: string[]): Promise<IENSTextRecord[]> {
+  async getTextRecords(name: string, recordKeys: string[]): Promise<IENSTextRecord[]> {
+    name = name.toLowerCase();
+
     const callData: Hash[] = [];
     const nameNode = namehash(name);
 
@@ -69,14 +86,15 @@ export class Resolver extends EnsExtension {
       callData.push(_callData);
     });
 
-    const funcResponse = await this.read<Hash[]>({
+    const funcResponse = await Contract.get().read<Hash[]>({
+      address: Resolver._address,
       functionName: 'multicall',
       args: [callData],
       abi,
     });
 
     const textRecords: IENSTextRecord[] = [];
-    funcResponse.forEach((_response, index) => {
+    funcResponse.forEach((_response: any, index: number) => {
       const decoded = decodeFunctionResult({
         abi,
         functionName: 'text',
@@ -94,18 +112,29 @@ export class Resolver extends EnsExtension {
     return textRecords;
   }
 
-  public async setAddress(name: string, address: string) {
-    return await this.write({
+  async setAddress(name: string, address: string) {
+    return await Contract.get().write({
+      address: Resolver._address,
       functionName: 'setAddr',
-      args: [namehash(name), address],
+      args: [namehash(name.toLowerCase()), address],
       abi,
     });
   }
 
-  public async getAddress(name: string) {
-    return await this.read({
+  async getAddress(name: string) {
+    return await Contract.get().read({
+      address: Resolver._address,
       functionName: 'addr',
-      args: [namehash(name)],
+      args: [namehash(name.toLowerCase())],
+      abi,
+    });
+  }
+
+  async getName(node: string): Promise<string> {
+    return await Contract.get().read({
+      address: Resolver._address,
+      functionName: 'name',
+      args: [node],
       abi,
     });
   }

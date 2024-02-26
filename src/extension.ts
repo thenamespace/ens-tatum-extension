@@ -7,6 +7,8 @@ import {
 } from '@tatumio/tatum';
 import { Contract } from './ens-contracts/contract';
 import { EnsController } from './ens-contracts/controller';
+import { Resolver } from './ens-contracts/resolver';
+import { ReverseRegistrar } from './ens-contracts/reverse-registrar';
 
 export interface EnsExtensionOptions {
   publicConnection?: {
@@ -34,7 +36,15 @@ export class EnsExtension extends TatumSdkExtension {
   }
 
   public getController(): EnsController {
-    return EnsController.get(this.contract.network);
+    return EnsController.get(this.contract);
+  }
+
+  public getResolver(): Resolver {
+    return Resolver.get(this.contract);
+  }
+
+  public getReverseRegistrar(): ReverseRegistrar {
+    return ReverseRegistrar.get(this.contract);
   }
 
   init(): Promise<void> {
