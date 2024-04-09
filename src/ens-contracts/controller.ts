@@ -1,8 +1,18 @@
-import { Network } from '@tatumio/tatum';
-import { Address, TransactionReceipt, encodeFunctionData, namehash } from 'viem';
-import controllerAbi from '../abi/eth-controller.json';
+import { JsonRpcResponse, Network } from '@tatumio/tatum';
+import { Address, Hash, decodeFunctionResult, encodeFunctionData, formatEther, namehash } from 'viem';
+import abi from '../abi/eth-controller.json';
 import resolverAbi from '../abi/public-resolver.json';
 import { Contract } from './contract';
+
+export interface RegistrationRequest {
+  label: string;
+  owner: string;
+  durationInSeconds: number;
+  secret: string;
+  resolver: string;
+  setAsPrimary: boolean;
+  fuses: number;
+}
 
 interface IRentPriceResponse {
   base: bigint;
@@ -17,13 +27,9 @@ export class EnsController {
 
   private constructor() {}
 
-  static get(contract?: Contract): EnsController {
-    if (EnsController._controller) return this._controller;
-
-    if (!contract?.network) throw new Error('Network must be provided.');
-
+  static create(): EnsController {
     EnsController._address =
-      contract.network === Network.ETHEREUM
+      Contract.network === Network.ETHEREUM
         ? this.CONTROLLER_ADDRESS_MAINNET
         : this.CONTROLLER_ADDRESS_SEPOLIA;
 
@@ -31,76 +37,96 @@ export class EnsController {
     return EnsController._controller;
   }
 
-  address(address: Address): EnsController {
-    EnsController._address = address;
+  static get instance() {
     return EnsController._controller;
   }
 
-  async makeCommitment(
-    label: string,
-    owner: string,
-    durationInSeconds: number,
-    secret: string,
-    resolver: string,
-    setAsPrimary: boolean,
-    fuses: number,
-  ): Promise<TransactionReceipt> {
-    label = label.toLocaleLowerCase();
-    const regData = await this.getSetAddrData(`${label}.eth`, owner);
-    const _encodedSecret = this.toBytes32HexString(secret);
-    const commitment = await Contract.get().read({
-      address: EnsController._address,
+  async commit(request: RegistrationRequest): Promise<string> {
+    const label = request.label.toLocaleLowerCase();
+    const regData = await this.encodeSetAddr(`${label}.eth`, request.owner);
+    const encodedSecret = this.toBytes32HexString(request.secret);
+    const makeCommitment = encodeFunctionData({
+      abi,
       functionName: 'makeCommitment',
-      args: [label, owner, durationInSeconds, _encodedSecret, resolver, [regData], setAsPrimary, fuses],
-      abi: controllerAbi,
+      args: [
+        label,
+        request.owner,
+        request.durationInSeconds,
+        encodedSecret,
+        request.resolver,
+        [regData],
+        request.setAsPrimary,
+        request.fuses,
+      ],
     });
 
-    return Contract.get().write({
-      address: EnsController._address,
+    const commitment = await Contract.instance.read({
+      to: EnsController._address,
+      data: makeCommitment,
+    });
+
+    const data = encodeFunctionData({
+      abi,
       functionName: 'commit',
-      args: [commitment],
-      abi: controllerAbi,
+      args: [commitment.result],
     });
+
+    return Contract.instance.write(EnsController._address, data);
   }
 
-  async register(
-    label: string,
-    owner: string,
-    durationInSeconds: number,
-    secret: string,
-    resolver: string,
-    setAsPrimary: boolean,
-    fuses: number,
-  ): Promise<TransactionReceipt> {
-    label = label.toLocaleLowerCase();
-    const totalPrice = await this.estimatePrice(label, durationInSeconds);
-    const encodedSecret = this.toBytes32HexString(secret);
-    const regData = await this.getSetAddrData(`${label}.eth`, owner);
+  async register(request: RegistrationRequest): Promise<string> {
+    const label = request.label.toLocaleLowerCase();
+    const regData = await this.encodeSetAddr(`${label}.eth`, request.owner);
+    const encodedSecret = this.toBytes32HexString(request.secret);
+    const totalPrice = await this.estimatePrice(request.label, request.durationInSeconds);
+    const value = formatEther(BigInt(totalPrice));
 
-    return await Contract.get().write({
-      address: EnsController._address,
+    const data = encodeFunctionData({
+      abi,
       functionName: 'register',
-      args: [label, owner, durationInSeconds, encodedSecret, resolver, [regData], setAsPrimary, fuses],
-      value: totalPrice,
-      abi: controllerAbi,
+      args: [
+        label,
+        request.owner,
+        request.durationInSeconds,
+        encodedSecret,
+        request.resolver,
+        [regData],
+        request.setAsPrimary,
+        request.fuses,
+      ],
     });
+
+    const contract = Contract.instance;
+    contract.setEvmPayload({ ...contract.evmPayload, value });
+
+    return contract.write(EnsController._address, data);
   }
 
-  public async estimatePrice(label: string, durationInSeconds: number): Promise<bigint> {
-    const estimate = await this.rentPrice(label, durationInSeconds);
+  private async estimatePrice(label: string, durationInSeconds: number): Promise<bigint> {
+    const price = await this.rentPrice(label, durationInSeconds);
+    const estimate = decodeFunctionResult({
+      abi,
+      functionName: 'rentPrice',
+      data: price.result as Hash,
+    }) as IRentPriceResponse;
+
     return estimate.base + estimate.premium;
   }
 
-  private async rentPrice(label: string, durationInSeconds: number): Promise<IRentPriceResponse> {
-    return await Contract.get().read<IRentPriceResponse>({
-      address: EnsController._address,
+  private async rentPrice(label: string, durationInSeconds: number): Promise<JsonRpcResponse<string>> {
+    const data = encodeFunctionData({
+      abi,
       functionName: 'rentPrice',
       args: [label, durationInSeconds],
-      abi: controllerAbi,
+    });
+
+    return Contract.instance.read({
+      to: EnsController._address,
+      data,
     });
   }
 
-  private async getSetAddrData(name: string, registrant: string) {
+  private async encodeSetAddr(name: string, registrant: string) {
     return encodeFunctionData({
       abi: resolverAbi,
       functionName: 'setAddr',

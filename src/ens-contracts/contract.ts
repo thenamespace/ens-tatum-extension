@@ -1,135 +1,51 @@
-import { Network } from '@tatumio/tatum';
-import {
-  Address,
-  PrivateKeyAccount,
-  PublicClient,
-  WalletClient,
-  createPublicClient,
-  createWalletClient,
-  custom,
-  http,
-} from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
-import { mainnet, sepolia } from 'viem/chains';
-import { EnsExtensionOptions } from '../extension';
+import { EvmTxPayload, EvmWalletProvider } from '@tatumio/evm-wallet-provider';
+import { EvmRpc, JsonRpcResponse, Network, TxPayload } from '@tatumio/tatum';
+import { Address, Hash } from 'viem';
 
-declare var window: any;
+export type EvmPayload = Omit<EvmTxPayload, 'to' | 'data'>;
 
 export class Contract {
-  private static _publicClient: PublicClient;
-  private static _walletClient: WalletClient;
-  private static _chain: any;
-  private static _accountAdress?: `0x${string}`;
-  private static _account: `0x${string}` | PrivateKeyAccount;
   private static _contract: Contract;
+  private static _rpc: EvmRpc;
   private static _network: Network;
+  private static _walletProvider: EvmWalletProvider;
+  private _evmPayload: EvmPayload;
 
-  private constructor(network?: Network, options?: EnsExtensionOptions) {
-    if (!network) throw new Error('Network must be provided.');
-    if (!options) throw new Error('Options must be provided.');
-
-    if (!options.privateConnection && !options.publicConnection) {
-      throw new Error('Private or public connection details must be provided');
-    }
-
-    // set the network
+  private constructor(rpc: EvmRpc, network: Network) {
+    Contract._rpc = rpc;
     Contract._network = network;
-    const chain =
-      Contract._network === Network.ETHEREUM
-        ? mainnet
-        : Contract._network === Network.ETHEREUM_SEPOLIA
-        ? sepolia
-        : null;
-
-    if (chain === null) throw new Error(`EnsExtension only supports ${Network.ETHEREUM} network`);
-
-    Contract._chain = chain;
-
-    // set the clients
-    Contract._publicClient = createPublicClient({
-      chain,
-      transport: http(),
-    });
-
-    const transport = options.privateConnection
-      ? http(options.privateConnection.rpcUrl)
-      : custom(window.ethereum);
-    Contract._walletClient = createWalletClient({
-      chain,
-      transport,
-    });
-
-    // set the account
-    Contract._account = options.privateConnection
-      ? privateKeyToAccount(options.privateConnection.accountKey)
-      : (options.publicConnection?.accountAddress as `0x${string}`);
   }
 
-  static get(network?: Network, options?: EnsExtensionOptions): Contract {
-    if (this._contract) return this._contract;
-
-    Contract._contract = new Contract(network, options);
+  static create(rpc: EvmRpc, network: Network): Contract {
+    Contract._contract = new Contract(rpc, network);
     return Contract._contract;
   }
 
-  setAccount(options?: EnsExtensionOptions) {
-    if (options?.privateConnection) {
-      Contract._walletClient = createWalletClient({
-        chain: Contract._chain,
-        transport: http(options.privateConnection.rpcUrl),
-      });
-    }
+  static get instance() {
+    return Contract._contract;
   }
 
-  get network() {
+  static get network() {
     return Contract._network;
   }
 
-  async read<T>({
-    address,
-    functionName,
-    args,
-    abi,
-  }: {
-    address: Address;
-    functionName: string;
-    args: any[];
-    abi: any;
-  }): Promise<T> {
-    return Contract._publicClient.readContract({
-      functionName,
-      args,
-      abi,
-      address,
-    }) as Promise<T>;
+  get evmPayload() {
+    return this._evmPayload;
   }
 
-  async write({
-    address,
-    functionName,
-    args,
-    value,
-    abi,
-  }: {
-    address: Address;
-    functionName: string;
-    args: any[];
-    value?: bigint;
-    abi: any;
-  }) {
-    const contractParams = {
-      abi,
-      address,
-      functionName,
-      args,
-      account: Contract._account,
-      value: value,
-    };
-    const { request } = await Contract._publicClient.simulateContract(contractParams);
+  setWalletProvider(walletProvider: EvmWalletProvider) {
+    Contract._walletProvider = walletProvider;
+  }
 
-    const txn = await Contract._walletClient.writeContract(request);
-    return await Contract._publicClient.waitForTransactionReceipt({
-      hash: txn,
-    });
+  setEvmPayload(evmPayload: EvmPayload) {
+    this._evmPayload = evmPayload;
+  }
+
+  async read(payload: TxPayload): Promise<JsonRpcResponse<string>> {
+    return Contract._rpc.call(payload);
+  }
+
+  async write(to: Address, data: Hash): Promise<string> {
+    return Contract._walletProvider.signAndBroadcast({ to, data, ...this._evmPayload });
   }
 }
