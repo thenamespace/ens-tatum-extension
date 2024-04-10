@@ -1,9 +1,9 @@
 import { Network } from '@tatumio/tatum';
-import { Address, Hash, TransactionReceipt, decodeFunctionResult, encodeFunctionData, namehash } from 'viem';
+import { Address, Hash, decodeFunctionResult, encodeFunctionData, namehash } from 'viem';
 import abi from '../abi/public-resolver.json';
 import { Contract } from './contract';
 
-export interface IENSTextRecord {
+export interface TextRecord {
   key: string;
   value: string;
 }
@@ -14,128 +14,121 @@ export class Resolver {
   private static _address: Address;
   private static _resolver: Resolver;
 
-  private constructor() {}
-
-  static get(contract?: Contract): Resolver {
-    if (Resolver._resolver) return this._resolver;
-
-    if (!contract?.network) throw new Error('Network must be provided.');
-
+  static create(): Resolver {
     Resolver._address =
-      contract.network === Network.ETHEREUM ? this.RESOLVER_ADDRESS_MAINNET : this.RESOLVER_ADDRESS_SEPOLIA;
+      Contract.network === Network.ETHEREUM ? this.RESOLVER_ADDRESS_MAINNET : this.RESOLVER_ADDRESS_SEPOLIA;
 
     Resolver._resolver = new Resolver();
     return Resolver._resolver;
   }
 
-  address(address: Address): Resolver {
-    Resolver._address = address;
+  static get instance() {
     return Resolver._resolver;
   }
 
   async setTextRecords(
     name: string,
-    recordsToUpdate: IENSTextRecord[],
+    recordsToUpdate: TextRecord[],
     recordsToRemove: string[],
-  ): Promise<TransactionReceipt> {
+  ): Promise<string> {
     name = name.toLowerCase();
-
-    const data: Hash[] = [];
-    if (recordsToUpdate.length > 0) {
-      recordsToUpdate.forEach((record) => {
-        const _encodedFunction = encodeFunctionData({
-          abi,
-          args: [namehash(name), record.key, record.value],
-          functionName: 'setText',
-        });
-        data.push(_encodedFunction);
-      });
-    }
-
-    if (recordsToRemove.length > 0) {
-      recordsToRemove.forEach((record) => {
-        const _encodedFunction = encodeFunctionData({
-          abi,
-          args: [namehash(name), record, ''],
-          functionName: 'setText',
-        });
-        data.push(_encodedFunction);
-      });
-    }
-
-    return Contract.get().write({
-      address: Resolver._address,
-      functionName: 'multicall',
-      args: [data],
-      abi,
-    });
-  }
-
-  async getTextRecords(name: string, recordKeys: string[]): Promise<IENSTextRecord[]> {
-    name = name.toLowerCase();
-
-    const callData: Hash[] = [];
     const nameNode = namehash(name);
 
-    recordKeys.forEach((recordKey) => {
-      const _callData = encodeFunctionData({
-        abi,
-        functionName: 'text',
-        args: [nameNode, recordKey],
-      });
-      callData.push(_callData);
-    });
+    // set up the encode function
+    const encode = (key: string, value: string) =>
+      encodeFunctionData({ abi, functionName: 'setText', args: [nameNode, key, value] });
 
-    const funcResponse = await Contract.get().read<Hash[]>({
-      address: Resolver._address,
-      functionName: 'multicall',
-      args: [callData],
-      abi,
-    });
+    // encode records to update
+    const updated = recordsToUpdate?.map((record) => encode(record.key, record.value));
 
-    const textRecords: IENSTextRecord[] = [];
-    funcResponse.forEach((_response: any, index: number) => {
-      const decoded = decodeFunctionResult({
-        abi,
-        functionName: 'text',
-        data: _response,
-      }) as any as string;
+    // encode records to remove
+    const removed = recordsToRemove?.map((record) => encode(record, ''));
 
-      if (decoded.length > 0) {
-        const textRecord: IENSTextRecord = {
-          value: decoded,
-          key: recordKeys[index],
-        };
-        textRecords.push(textRecord);
-      }
-    });
-    return textRecords;
+    const data = encodeFunctionData({ abi, functionName: 'multicall', args: [[...updated, ...removed]] });
+
+    return Contract.instance.write(Resolver._address, data);
   }
 
-  async setAddress(name: string, address: string) {
-    return await Contract.get().write({
-      address: Resolver._address,
+  async getTextRecords(name: string, recordKeys: string[]): Promise<TextRecord[]> {
+    name = name.toLowerCase();
+    const nameNode = namehash(name);
+
+    // encode keys for which to retrieve records
+    const encode = (key: string) => encodeFunctionData({ abi, functionName: 'text', args: [nameNode, key] });
+    const keys = recordKeys?.map((key) => encode(key));
+
+    // get the records by calling multicall
+    const multicall = encodeFunctionData({ abi, functionName: 'multicall', args: [keys] });
+    const encoded = await Contract.instance.read({ to: Resolver._address, data: multicall });
+
+    // decode result
+    const records = decodeFunctionResult({
+      abi,
+      functionName: 'multicall',
+      data: encoded.result as Hash,
+    }) as [];
+
+    // set up the decode function
+    const decode = (record: Hash) =>
+      decodeFunctionResult({
+        abi,
+        functionName: 'text',
+        data: record,
+      }) as string;
+
+    // decode retrieved records
+    return records
+      ?.map((record) => decode(record))
+      .map((value, index) => {
+        return { key: recordKeys[index], value };
+      }) as TextRecord[];
+  }
+
+  async setAddress(name: string, address: string): Promise<string> {
+    const data = encodeFunctionData({
+      abi,
       functionName: 'setAddr',
       args: [namehash(name.toLowerCase()), address],
-      abi,
     });
+
+    return Contract.instance.write(Resolver._address, data);
   }
 
-  async getAddress(name: string) {
-    return await Contract.get().read({
-      address: Resolver._address,
+  async getAddress(name: string): Promise<string> {
+    const data = encodeFunctionData({
+      abi,
       functionName: 'addr',
       args: [namehash(name.toLowerCase())],
-      abi,
     });
+
+    const address = await Contract.instance.read({
+      to: Resolver._address,
+      data,
+    });
+
+    return decodeFunctionResult({
+      abi,
+      functionName: 'addr',
+      data: address.result as Address,
+    }) as string;
   }
 
   async getName(node: string): Promise<string> {
-    return await Contract.get().read({
-      address: Resolver._address,
+    const data = encodeFunctionData({
+      abi,
       functionName: 'name',
       args: [node],
-      abi,
     });
+
+    const name = await Contract.instance.read({
+      to: Resolver._address,
+      data,
+    });
+
+    return decodeFunctionResult({
+      abi,
+      functionName: 'name',
+      data: name.result as Address,
+    }) as string;
   }
 }
