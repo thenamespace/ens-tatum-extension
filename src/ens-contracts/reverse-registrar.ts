@@ -1,5 +1,5 @@
 import { Network } from '@tatumio/tatum';
-import { Address, TransactionReceipt } from 'viem';
+import { Address, encodeFunctionData } from 'viem';
 import abi from '../abi/reverse-registrar.json';
 import { Contract } from './contract';
 
@@ -7,58 +7,56 @@ export class ReverseRegistrar {
   public static REVERSE_REGISTRAR_ADDRESS_MAINNET: Address = '0xa58e81fe9b61b5c3fe2afd33cf304c454abfc7cb';
   public static REVERSE_REGISTRAR_ADDRESS_SEPOLIA: Address = '0xA0a1AbcDAe1a2a4A2EF8e9113Ff0e02DD81DC0C6';
   private static _address: Address;
-  private static _resolver: ReverseRegistrar;
+  private static _reverseRegistrar: ReverseRegistrar;
 
   private constructor() {}
 
-  static get(contract?: Contract): ReverseRegistrar {
-    if (ReverseRegistrar._resolver) return this._resolver;
-
-    if (!contract?.network) throw new Error('Network must be provided.');
-
+  static create(): ReverseRegistrar {
     ReverseRegistrar._address =
-      contract.network === Network.ETHEREUM
+      Contract.network === Network.ETHEREUM
         ? this.REVERSE_REGISTRAR_ADDRESS_MAINNET
         : this.REVERSE_REGISTRAR_ADDRESS_SEPOLIA;
 
-    ReverseRegistrar._resolver = new ReverseRegistrar();
-    return ReverseRegistrar._resolver;
+    ReverseRegistrar._reverseRegistrar = new ReverseRegistrar();
+    return ReverseRegistrar._reverseRegistrar;
   }
 
-  address(address: Address): ReverseRegistrar {
-    ReverseRegistrar._address = address;
-    return ReverseRegistrar._resolver;
+  static get instance() {
+    return ReverseRegistrar._reverseRegistrar;
   }
 
-  async node(address: Address): Promise<string> {
-    return Contract.get().read<string>({
-      address: ReverseRegistrar._address,
+  async node(address: string): Promise<string> {
+    const data = encodeFunctionData({
+      abi,
       functionName: 'node',
       args: [address],
-      abi,
     });
+
+    const node = await Contract.instance.read({
+      to: ReverseRegistrar._address,
+      data,
+    });
+
+    return node.result as string;
   }
 
-  async setName(name: string): Promise<TransactionReceipt> {
-    return Contract.get().write({
-      address: ReverseRegistrar._address,
+  async setName(name: string): Promise<string> {
+    const data = encodeFunctionData({
+      abi,
       functionName: 'setName',
       args: [name],
-      abi: abi,
     });
+
+    return Contract.instance.write(ReverseRegistrar._address, data);
   }
 
-  async setNameForAddr(
-    address: Address,
-    owner: Address,
-    resolver: Address,
-    name: string,
-  ): Promise<TransactionReceipt> {
-    return Contract.get().write({
-      address: ReverseRegistrar._address,
+  async setNameForAddr(address: string, owner: string, resolver: string, name: string): Promise<string> {
+    const data = encodeFunctionData({
+      abi,
       functionName: 'setNameForAddr',
       args: [address, owner, resolver, name],
-      abi: abi,
     });
+
+    return Contract.instance.write(ReverseRegistrar._address, data);
   }
 }
