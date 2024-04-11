@@ -78,10 +78,12 @@ export class EnsExtension extends TatumSdkExtension {
 
   init(): Promise<void> {
     if (Contract.network === Network.ETHEREUM || Contract.network === Network.ETHEREUM_SEPOLIA) {
-      console.log(`[EnsExtension] initialised on [${Contract.network}] network`);
+      console.log(`EnsExtension initialised on ${Contract.network} network`);
       return Promise.resolve(undefined);
     }
-    throw new Error(`EnsExtension only supports ${Network.ETHEREUM} network`);
+    throw new Error(
+      `EnsExtension only supports ${Network.ETHEREUM} and ${Network.ETHEREUM_SEPOLIA} networks`,
+    );
   }
 
   destroy(): Promise<void> {
