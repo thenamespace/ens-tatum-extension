@@ -1,14 +1,16 @@
 import { EvmTxPayload, EvmWalletProvider } from '@tatumio/evm-wallet-provider';
-import { EvmRpc, JsonRpcResponse, Network, TxPayload } from '@tatumio/tatum';
+import { EvmRpc, JsonRpcResponse, MetaMask, Network, TxPayload } from '@tatumio/tatum';
 import { Address, Hash } from 'viem';
 
 export type EvmPayload = Omit<EvmTxPayload, 'to' | 'data'>;
+
+export type WalletProvider = EvmWalletProvider | MetaMask;
 
 export class Contract {
   private static _contract: Contract;
   private static _rpc: EvmRpc;
   private static _network: Network;
-  private static _walletProvider: EvmWalletProvider;
+  private static _walletProvider: WalletProvider;
   private _evmPayload: EvmPayload;
 
   private constructor(rpc: EvmRpc, network: Network) {
@@ -33,7 +35,7 @@ export class Contract {
     return this._evmPayload;
   }
 
-  setWalletProvider(walletProvider: EvmWalletProvider) {
+  setWalletProvider(walletProvider: WalletProvider) {
     Contract._walletProvider = walletProvider;
   }
 
