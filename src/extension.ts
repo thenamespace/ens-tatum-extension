@@ -1,11 +1,4 @@
-import {
-  EVM_BASED_NETWORKS,
-  EvmRpc,
-  ITatumSdkContainer,
-  Network,
-  TatumConfig,
-  TatumSdkExtension,
-} from '@tatumio/tatum';
+import { EVM_BASED_NETWORKS, EvmRpc, ITatumSdkContainer, Network, TatumSdkExtension } from '@tatumio/tatum';
 import { Contract, EvmPayload, WalletProvider } from './ens-contracts/contract';
 import { EnsController, RegistrationRequest } from './ens-contracts/controller';
 import { Resolver, TextRecord } from './ens-contracts/resolver';
@@ -14,13 +7,11 @@ import { ReverseRegistrar } from './ens-contracts/reverse-registrar';
 export class EnsExtension extends TatumSdkExtension {
   supportedNetworks: Network[] = EVM_BASED_NETWORKS;
 
-  private readonly _sdkConfig: TatumConfig;
-
   constructor(tatumSdkContainer: ITatumSdkContainer) {
     super(tatumSdkContainer);
-    this._sdkConfig = this.tatumSdkContainer.getConfig();
+    const sdkConfig = this.tatumSdkContainer.getConfig();
 
-    Contract.create(tatumSdkContainer.getRpc<EvmRpc>(), this._sdkConfig.network);
+    Contract.create(tatumSdkContainer.getRpc<EvmRpc>(), sdkConfig.network);
     EnsController.create();
     Resolver.create();
     ReverseRegistrar.create();
@@ -86,11 +77,8 @@ export class EnsExtension extends TatumSdkExtension {
   }
 
   init(): Promise<void> {
-    if (
-      this._sdkConfig.network === Network.ETHEREUM ||
-      this._sdkConfig.network === Network.ETHEREUM_SEPOLIA
-    ) {
-      console.log(`[EnsExtension] initialised`);
+    if (Contract.network === Network.ETHEREUM || Contract.network === Network.ETHEREUM_SEPOLIA) {
+      console.log(`[EnsExtension] initialised on [${Contract.network}] network`);
       return Promise.resolve(undefined);
     }
     throw new Error(`EnsExtension only supports ${Network.ETHEREUM} network`);
