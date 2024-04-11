@@ -1,7 +1,7 @@
 {
-  "name": "ens-extension",
+  "name": "@namespace-ens/tatum-ens-extension",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "dist/index.js",
   "license": "MIT",
   "scripts": {
     "lint": "eslint src --ext .js,.jsx,.ts,.tsx && prettier --write src/",
