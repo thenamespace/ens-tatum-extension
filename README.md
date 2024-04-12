@@ -19,7 +19,7 @@ Initialize the extension. There are two types of connections for which the exten
 - _private connection_ - connecting with your private key
 - _public connection_ - connecting with a wallet such as MetaMask
 
-### Public connection
+### Private connection
 
 ```ts
 const tatum = await TatumSDK.init<Ethereum>({
@@ -39,11 +39,10 @@ const ens = tatum
   });
 ```
 
-### Private connection
+### Public connection
 
 ```ts
 const tatum = await TatumSDK.init<Ethereum>({
-  apiKey: '_your_tatum_api_key_',
   network: '_network_to_connect_to_', // either Network.ETHEREUM or Network.ETHEREUM_SEPOLIA
   configureWalletProviders: [MetaMask],
   configureExtensions: [EnsExtension],
