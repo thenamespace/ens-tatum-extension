@@ -1,1 +1,1 @@
-export { EnsController } from "./ens-contracts/controller";
+export * from './extension';

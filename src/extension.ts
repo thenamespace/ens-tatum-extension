@@ -1,109 +1,89 @@
-import {
-  EVM_BASED_NETWORKS,
-  FeeEvm,
-  ITatumSdkContainer,
-  Network,
-  TatumConfig,
-  TatumSdkExtension,
-} from '@tatumio/tatum';
-import {
-  Address,
-  PublicClient,
-  WalletClient,
-  createPublicClient,
-  createWalletClient,
-  custom,
-  http,
-} from 'viem';
-import { mainnet, sepolia } from 'viem/chains';
-declare var window: any;
+import { EVM_BASED_NETWORKS, EvmRpc, ITatumSdkContainer, Network, TatumSdkExtension } from '@tatumio/tatum';
+import { Contract, EvmPayload, WalletProvider } from './ens-contracts/contract';
+import { EnsController, RegistrationRequest } from './ens-contracts/controller';
+import { Resolver, TextRecord } from './ens-contracts/resolver';
+import { ReverseRegistrar } from './ens-contracts/reverse-registrar';
 
-export interface EnsExtensionOptions {
-  accountAddress: string;
-}
-
-export abstract class EnsExtension extends TatumSdkExtension {
+export class EnsExtension extends TatumSdkExtension {
   supportedNetworks: Network[] = EVM_BASED_NETWORKS;
-  protected readonly fee: FeeEvm;
-  protected readonly sdkConfig: TatumConfig;
-  protected readonly publicClient: PublicClient;
-  protected readonly walletClient: WalletClient;
-  protected contract: Address;
-  protected account: Address;
 
-  constructor(tatumSdkContainer: ITatumSdkContainer, options: EnsExtensionOptions) {
+  constructor(tatumSdkContainer: ITatumSdkContainer) {
     super(tatumSdkContainer);
-    this.fee = this.tatumSdkContainer.get(FeeEvm);
-    this.sdkConfig = this.tatumSdkContainer.getConfig();
+    const sdkConfig = this.tatumSdkContainer.getConfig();
 
-    const network = tatumSdkContainer.getConfig().network;
-    const chain =
-      network === Network.ETHEREUM ? mainnet : network === Network.ETHEREUM_SEPOLIA ? sepolia : null;
-
-    if (chain === null) throw new Error(`EnsExtension only supports ${Network.ETHEREUM} network`);
-
-    this.publicClient = createPublicClient({
-      chain,
-      transport: http(),
-    });
-
-    this.walletClient = createWalletClient({
-      chain,
-      transport: custom(window.ethereum),
-    });
-
-    this.account = options.accountAddress as Address;
+    Contract.create(tatumSdkContainer.getRpc<EvmRpc>(), sdkConfig.network);
+    EnsController.create();
+    Resolver.create();
+    ReverseRegistrar.create();
   }
 
-  protected async read<T>({
-    functionName,
-    args,
-    abi,
-  }: {
-    functionName: string;
-    args: any[];
-    abi: any;
-  }): Promise<T> {
-    return this.publicClient.readContract({
-      functionName,
-      args,
-      account: this.account,
-      abi,
-      address: this.contract,
-    }) as Promise<T>;
+  public walletProvider(walletProvider: WalletProvider) {
+    Contract.instance.setWalletProvider(walletProvider);
+    return this;
   }
 
-  protected async write({
-    functionName,
-    args,
-    value,
-    abi,
-  }: {
-    functionName: string;
-    args: any[];
-    value?: bigint;
-    abi: any;
-  }) {
-    const contractParams = {
-      abi,
-      address: this.contract,
-      functionName,
-      args,
-      account: this.account,
-      value: value,
-    };
+  public evmPayload(evmPayload: EvmPayload) {
+    Contract.instance.setEvmPayload(evmPayload);
+    return this;
+  }
 
-    const { request } = await this.publicClient.simulateContract(contractParams);
+  public async commitEnsRegistration(request: RegistrationRequest): Promise<string> {
+    return EnsController.instance.commit(request);
+  }
 
-    return this.walletClient.writeContract(request as any);
+  public async registerEnsDomain(request: RegistrationRequest): Promise<string> {
+    return EnsController.instance.register(request);
+  }
+
+  public async setTextRecords(
+    name: string,
+    recordsToUpdate: TextRecord[],
+    recordsToRemove: string[],
+  ): Promise<string> {
+    return Resolver.instance.setTextRecords(name, recordsToUpdate, recordsToRemove);
+  }
+
+  public async getTextRecords(name: string, recordKeys: string[]): Promise<TextRecord[]> {
+    return Resolver.instance.getTextRecords(name, recordKeys);
+  }
+
+  public async setAddress(name: string, address: string): Promise<string> {
+    return Resolver.instance.setAddress(name, address);
+  }
+
+  public async getAddress(name: string): Promise<string> {
+    return Resolver.instance.getAddress(name);
+  }
+
+  public async getName(node: string): Promise<string> {
+    return Resolver.instance.getName(node);
+  }
+
+  public async setName(name: string): Promise<string> {
+    return ReverseRegistrar.instance.setName(name);
+  }
+
+  public async setNameForAddr(
+    address: string,
+    owner: string,
+    resolver: string,
+    name: string,
+  ): Promise<string> {
+    return ReverseRegistrar.instance.setNameForAddr(address, owner, resolver, name);
+  }
+
+  public async node(address: string): Promise<string> {
+    return ReverseRegistrar.instance.node(address);
   }
 
   init(): Promise<void> {
-    if (this.sdkConfig.network === Network.ETHEREUM || this.sdkConfig.network === Network.ETHEREUM_SEPOLIA) {
-      console.log(`[EnsExtension] initialised`);
+    if (Contract.network === Network.ETHEREUM || Contract.network === Network.ETHEREUM_SEPOLIA) {
+      console.log(`EnsExtension initialised on ${Contract.network} network`);
       return Promise.resolve(undefined);
     }
-    throw new Error(`EnsExtension only supports ${Network.ETHEREUM} network`);
+    throw new Error(
+      `EnsExtension only supports ${Network.ETHEREUM} and ${Network.ETHEREUM_SEPOLIA} networks`,
+    );
   }
 
   destroy(): Promise<void> {
