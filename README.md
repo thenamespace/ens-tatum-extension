@@ -9,7 +9,7 @@
 # Installation
 
 ```
-yarn add @namespace-ens/tatum-ens-extension
+yarn add @tatumio/tatum @tatumio/evm-wallet-provider @namespace-ens/tatum-ens-extension
 ```
 
 # Setting up the extension
